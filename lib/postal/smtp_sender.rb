@@ -170,9 +170,27 @@ module Postal
         safe_rset
       rescue Net::SMTPFatalError => e
         log "#{e.class}: #{e.message}"
-        result.type = 'HardFail'
-        result.details = "Permanent SMTP delivery error when sending to #{destination_host_description}"
-        result.output = e.message
+        reason = e.to_s.downcase
+        # handle 550 from qq.com
+        # https://service.mail.qq.com/cgi-bin/help?id=20022
+        if /550(.+?)frequency limited/.match(reason)
+          result.type = 'SoftFail'
+          result.retry = true
+          result.details = "An error occurred while sending the message to #{destination_host_description}"
+          result.output = e.message
+          if e.to_s =~ /(\d+) seconds/
+            result.retry = $1.to_i + 10
+          elsif e.to_s =~ /(\d+) minutes/
+            result.retry = ($1.to_i * 60) + 10
+          else
+            result.retry = 3600
+          end
+        else
+          result.type = 'HardFail'
+          result.details = "Permanent SMTP delivery error when sending to #{destination_host_description}"
+          result.output = e.message
+        end
+
         safe_rset
       rescue => e
         log "#{e.class}: #{e.message}"
